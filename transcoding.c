@@ -5,14 +5,12 @@ int pcbc_bytes_to_zval(bucket_object *obj, zval **zvalue, const void *bytes,
 	zval zbytes, zflags, zdatatype;
 	zval *zparams[] = { &zbytes, &zflags, &zdatatype };
 
-	if (nbytes == 0) {
-		MAKE_STD_ZVAL(*zvalue);
-		ZVAL_NULL(*zvalue);
-		return SUCCESS;
-	}
-
 	INIT_ZVAL(zbytes);
-	ZVAL_STRINGL(&zbytes, bytes, nbytes, 0);
+	if (nbytes > 0) {
+	    ZVAL_STRINGL(&zbytes, bytes, nbytes, 0);
+	} else {
+	    ZVAL_STRINGL(&zbytes, "", 0, 0);
+	}
 
 	INIT_ZVAL(zflags);
 	ZVAL_LONG(&zflags, flags);
@@ -61,10 +59,12 @@ int pcbc_zval_to_bytes(bucket_object *obj, zval *value,
 		return FAILURE;
 	}
 
-	*bytes = Z_STRVAL_PP(zpbytes);
 	*nbytes = Z_STRLEN_PP(zpbytes);
+	*bytes = estrndup(Z_STRVAL_PP(zpbytes), *nbytes);
 	*flags = Z_LVAL_PP(zpflags);
 	*datatype = (lcb_uint8_t)Z_LVAL_PP(zpdatatype);
+
+	zval_dtor(&zretval);
 
 	return SUCCESS;
 }

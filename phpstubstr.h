@@ -396,7 +396,7 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "        } else if ($sertype == COUCHBASE_VAL_IS_DOUBLE) {\n" \
 "            $retval = floatval($data);\n" \
 "        } else if ($sertype == COUCHBASE_VAL_IS_BOOL) {\n" \
-"            $retval = boolval($data);\n" \
+"            $retval = $data != \"\";\n" \
 "        } else if ($sertype == COUCHBASE_VAL_IS_JSON) {\n" \
 "            $retval = json_decode($data, $options['jsonassoc']);\n" \
 "        } else if ($sertype == COUCHBASE_VAL_IS_IGBINARY) {\n" \
@@ -649,15 +649,35 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "     * @param $group_level\n" \
 "     * @return $this\n" \
 "     */\n" \
-"    public function group($group_level) {\n" \
-"        if ($group_level >= 0) {\n" \
+"    public function group($group) {\n" \
+"        if ($group == true) {\n" \
+"          $this->options['group'] = 'true';\n" \
+"        } else if ($group == false) {\n" \
+"          $this->options['group'] = 'false';\n" \
+"          \n" \
+"        // For backwards compatibility\n" \
+"        } else if ($group >= 0) {\n" \
 "            $this->options['group'] = 'false';\n" \
-"            $this->options['group_level'] = '' . $group_level;\n" \
+"            $this->options['group_level'] = $group;\n" \
 "        } else {\n" \
 "            $this->options['group'] = 'true';\n" \
-"            $this->options['group_level'] = '0';\n" \
+"            $this->options['group_level'] = 0;\n" \
 "        }\n" \
 "        return $this;\n" \
+"    }\n" \
+"    \n" \
+"    /**\n" \
+"     * Specifies the level at which to perform view grouping.\n" \
+"     * \n" \
+"     * @param $group_level\n" \
+"     * @returns $this\n" \
+"     */\n" \
+"    public function group_level($group_level) {\n" \
+"        if ($group_level >= 0) {\n" \
+"            $this->options['group_level'] = $group_level;\n" \
+"        } else {\n" \
+"            unset($this->options['group_level']);\n" \
+"        }\n" \
 "    }\n" \
 "\n" \
 "    /**\n" \
@@ -697,13 +717,13 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "            $this->options['startkey'] =\n" \
 "                str_replace('\\\\\\\\', '\\\\', json_encode($start));\n" \
 "        } else {\n" \
-"            $this->options['startkey'] = '';\n" \
+"            unset($this->options['startkey']);\n" \
 "        }\n" \
 "        if ($end !== NULL) {\n" \
 "            $this->options['endkey'] =\n" \
 "                str_replace('\\\\\\\\', '\\\\', json_encode($end));\n" \
 "        } else {\n" \
-"            $this->options['endkey'] = '';\n" \
+"            unset($this->options['endkey']);\n" \
 "        }\n" \
 "        $this->options['inclusive_end'] = $inclusive_end ? 'true' : 'false';\n" \
 "        return $this;\n" \
