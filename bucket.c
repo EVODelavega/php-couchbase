@@ -90,6 +90,7 @@ zend_object_value bucket_create_handler(zend_class_entry *type TSRMLS_DC)
 	memset(obj, 0, sizeof(bucket_object));
 	obj->std.ce = type;
 	obj->conn = NULL;
+    object->exception_on = 1;
 
 	MAKE_STD_ZVAL(obj->encoder);
 	ZVAL_EMPTY_STRING(obj->encoder);
@@ -236,7 +237,8 @@ static int pcbc_wait(bucket_object *obj TSRMLS_DC)
 	lcb_wait(instance);
 
 	if (obj->error) {
-		zend_throw_exception_object(obj->error TSRMLS_CC);
+        if (obj->exception_on)
+    		zend_throw_exception_object(obj->error TSRMLS_CC);
 		obj->error = NULL;
 		return 0;
 	}
@@ -1190,10 +1192,31 @@ PHP_METHOD(Bucket, getOption)
 	RETURN_LONG(lcbval);
 }
 
+PHP_METHOD(Bucket, setException)
+{
+    bucket_object *data = PHP_THISOBJ();
+    long mode = data->exception_on;
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l", &mode) == FAILURE)
+        return;
+    if (mode == 0)
+        data->exception_on = 0;
+    else
+        data->exception_on = 1;
+    RETURN_LONG(data->exception_on);
+}
+
+PHP_METHOD(Bucket, getException)
+{
+    bucket_object *data = PHP_THISOBJ();
+    RETURN_LONG(data->exception_on);
+}
+
 zend_function_entry bucket_methods[] = {
 	PHP_ME(Bucket,  __construct,     NULL, ZEND_ACC_PUBLIC | ZEND_ACC_CTOR)
 
 	PHP_ME(Bucket,  insert,          NULL, ZEND_ACC_PUBLIC)
+    PHP_ME(Bucket,  setException,    NULL, ZEND_ACC_PUBLIC)
+    PHP_ME(Bucket,  getException,    NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  upsert,          NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  replace,         NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  append,          NULL, ZEND_ACC_PUBLIC)

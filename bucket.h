@@ -10,6 +10,7 @@ typedef struct bucket_object {
 	zval *encoder;
 	zval *decoder;
 	zval *prefix;
+    int exception_on;
 
 	pcbc_lcb *conn;
 } bucket_object;
