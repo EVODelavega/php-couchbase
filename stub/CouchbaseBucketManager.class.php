@@ -95,7 +95,11 @@ class CouchbaseBucketManager {
     public function getDesignDocument($name) {
         $path = '_design/' . $name;
         $res = $this->_me->http_request(1, 1, $path, NULL, 2);
-        return json_decode($res, true);
+        $data = json_decode($res, true);
+        if (isset($data['error'])) {
+            return false;
+        }
+        return $data;
     }
 
     /**
@@ -107,6 +111,17 @@ class CouchbaseBucketManager {
     public function removeDesignDocument($name) {
         $path = '_design/' . $name;
         $res = $this->_me->http_request(1, 4, $path, NULL, 2);
+        return json_decode($res, true);
+    }
+
+    /**
+     * Flushes this bucket (clears all data).
+     *
+     * @return mixed
+     */
+    public function flush() {
+        $path = "/pools/default/buckets/" . $this->_name . "/controller/doFlush";
+        $res = $this->_me->http_request(2, 2, $path, NULL, 2);
         return json_decode($res, true);
     }
 

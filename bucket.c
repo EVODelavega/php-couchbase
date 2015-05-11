@@ -199,11 +199,6 @@ static void touch_callback(lcb_t instance, const void *cookie,
 	}
 }
 
-static void flush_callback(lcb_t instance, const void *cookie,
-			lcb_error_t error, const lcb_flush_resp_t *resp) {
-	// Nothing to care about...
-}
-
 static void http_complete_callback(lcb_http_request_t request, lcb_t instance,
 			const void *cookie, lcb_error_t error,
 			const lcb_http_resp_t *resp) {
@@ -339,7 +334,6 @@ PHP_METHOD(Bucket, __construct)
 		lcb_set_arithmetic_callback(instance, arithmetic_callback);
 		lcb_set_remove_callback(instance, remove_callback);
 		lcb_set_touch_callback(instance, touch_callback);
-		lcb_set_flush_callback(instance, flush_callback);
 		lcb_set_http_complete_callback(instance, http_complete_callback);
 		lcb_set_durability_callback(instance, durability_callback);
 
@@ -751,6 +745,55 @@ PHP_METHOD(Bucket, remove)
 	efree(cmd);
 }
 
+// touch($id {, $lock, $groupid}) : MetaDoc
+PHP_METHOD(Bucket, touch)
+{
+    bucket_object *data = PHP_THISOBJ();
+    lcb_touch_cmd_t *cmd = NULL;
+    lcb_touch_cmd_t **cmds = NULL;
+    int ii, num_cmds;
+    pcbc_pp_state pp_state;
+    zval *zid, *zexpiry, *zgroupid;
+    bopcookie *cookie;
+
+  // Note that groupid is experimental here and should not be used.
+    pcbc_pp_begin(ZEND_NUM_ARGS() TSRMLS_CC, &pp_state,
+                  "id|expiry|groupid",
+                  &zid, &zexpiry, &zgroupid);
+
+    num_cmds = pcbc_pp_keycount(&pp_state);
+    cmd = emalloc(sizeof(lcb_touch_cmd_t) * num_cmds);
+    cmds = emalloc(sizeof(lcb_touch_cmd_t*) * num_cmds);
+    memset(cmd, 0, sizeof(lcb_touch_cmd_t) * num_cmds);
+
+    for (ii = 0; pcbc_pp_next(&pp_state); ++ii) {
+        PCBC_CHECK_ZVAL(zid, IS_STRING, "id must be a string");
+        PCBC_CHECK_ZVAL(zexpiry, IS_LONG, "expiry must be an integer");
+        PCBC_CHECK_ZVAL(zgroupid, IS_STRING, "groupid must be a string");
+
+        cmd[ii].version = 0;
+        cmd[ii].v.v0.key = Z_STRVAL_P(zid);
+        cmd[ii].v.v0.nkey = Z_STRLEN_P(zid);
+        cmd[ii].v.v0.exptime = Z_LVAL_P(zexpiry);
+        if (zgroupid) {
+            cmd[ii].v.v0.hashkey = Z_STRVAL_P(zgroupid);
+            cmd[ii].v.v0.nhashkey = Z_STRLEN_P(zgroupid);
+        }
+
+        cmds[ii] = &cmd[ii];
+    }
+
+    cookie = bopcookie_init(data, return_value, pcbc_pp_ismapped(&pp_state));
+
+    lcb_touch(data->conn->lcb, cookie,
+            num_cmds, (const lcb_touch_cmd_t*const*)cmds);
+    pcbc_wait(data TSRMLS_CC);
+
+    bopcookie_destroy(cookie);
+    efree(cmds);
+    efree(cmd);
+}
+
 // get($id {, $lock, $groupid}) : MetaDoc
 PHP_METHOD(Bucket, get)
 {
@@ -970,16 +1013,6 @@ PHP_METHOD(Bucket, counter)
 	efree(cmd);
 }
 
-PHP_METHOD(Bucket, flush)
-{
-	bucket_object *data = PHP_THISOBJ();
-	lcb_flush_cmd_t cmd = { 0 };
-	const lcb_flush_cmd_t *const cmds = { &cmd };
-
-	lcb_flush(data->conn->lcb, NULL, 1, &cmds);
-	pcbc_wait(data TSRMLS_CC);
-}
-
 PHP_METHOD(Bucket, http_request)
 {
 	bucket_object *data = PHP_THISOBJ();
@@ -999,6 +1032,8 @@ PHP_METHOD(Bucket, http_request)
 		type = LCB_HTTP_TYPE_VIEW;
 	} else if (Z_LVAL_P(ztype) == 2) {
 		type = LCB_HTTP_TYPE_MANAGEMENT;
+	} else if (Z_LVAL_P(ztype) == 3) {
+	    type = LCB_HTTP_TYPE_N1QL;
 	} else {
 		RETURN_NULL();
 	}
@@ -1023,8 +1058,10 @@ PHP_METHOD(Bucket, http_request)
 		RETURN_NULL();
 	}
 
-	cmd.v.v0.path = Z_STRVAL_P(zpath);
-	cmd.v.v0.npath = Z_STRLEN_P(zpath);
+	if (Z_TYPE_P(zpath) == IS_STRING) {
+	    cmd.v.v0.path = Z_STRVAL_P(zpath);
+	    cmd.v.v0.npath = Z_STRLEN_P(zpath);
+	}
 	if (Z_TYPE_P(zbody) == IS_STRING) {
 		cmd.v.v0.body = Z_STRVAL_P(zbody);
 		cmd.v.v0.nbody = Z_STRLEN_P(zbody);
@@ -1164,8 +1201,8 @@ zend_function_entry bucket_methods[] = {
 	PHP_ME(Bucket,  remove,          NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  get,             NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  getFromReplica,  NULL, ZEND_ACC_PUBLIC)
+	PHP_ME(Bucket,  touch,           NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  counter,         NULL, ZEND_ACC_PUBLIC)
-	PHP_ME(Bucket,  flush,           NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  unlock,          NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  http_request,    NULL, ZEND_ACC_PUBLIC)
 	PHP_ME(Bucket,  durability,      NULL, ZEND_ACC_PUBLIC)

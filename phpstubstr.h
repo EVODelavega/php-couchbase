@@ -678,6 +678,7 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "        } else {\n" \
 "            unset($this->options['group_level']);\n" \
 "        }\n" \
+"        return $this;\n" \
 "    }\n" \
 "\n" \
 "    /**\n" \
@@ -813,7 +814,11 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "     * @var string\n" \
 "     * @internal\n" \
 "     */\n" \
-"    public $querystr = '';\n" \
+"    public $options = array();\n" \
+"\n" \
+"    const NOT_BOUNDED = 1;\n" \
+"    const REQUEST_PLUS = 2;\n" \
+"    const STATEMENT_PLUS = 3;\n" \
 "\n" \
 "    /**\n" \
 "     * Creates a new N1qlQuery instance directly from a N1QL DML.\n" \
@@ -822,17 +827,46 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "     */\n" \
 "    static public function fromString($str) {\n" \
 "        $res = new CouchbaseN1qlQuery();\n" \
-"        $res->querystr = $str;\n" \
+"        $res->options['statement'] = $str;\n" \
 "        return $res;\n" \
 "    }\n" \
 "\n" \
 "    /**\n" \
-"     * Generates the N1QL string as it will be passed to the server.\n" \
+"     * Specify the consistency level for this query.\n" \
+"     *\n" \
+"     * @param $consistency\n" \
+"     * @return $this\n" \
+"     * @throws CouchbaseException\n" \
+"     */\n" \
+"    public function consistency($consistency) {\n" \
+"        if ($consistency == self::NOT_BOUNDED) {\n" \
+"            $this->options['scan_consistency'] = 'not_bounded';\n" \
+"        } else if ($consistency == self::REQUEST_PLUS) {\n" \
+"            $this->options['scan_consistency'] = 'request_plus';\n" \
+"        } else if ($consistency == self::STATEMENT_PLUS) {\n" \
+"            $this->options['scan_consistency'] = 'statement_plus';\n" \
+"        } else {\n" \
+"            throw new CouchbaseException('invalid option passed.');\n" \
+"        }\n" \
+"        return $this;\n" \
+"    }\n" \
+"\n" \
+"    /**\n" \
+"     * Generates the N1QL object as it will be passed to the server.\n" \
+"     *\n" \
+"     * @return object\n" \
+"     */\n" \
+"    public function toObject() {\n" \
+"        return $this->options;\n" \
+"    }\n" \
+"    \n" \
+"    /**\n" \
+"     * Returns the string representation of this N1ql query (the statement).\n" \
 "     *\n" \
 "     * @return string\n" \
 "     */\n" \
 "    public function toString() {\n" \
-"        return $this->querystr;\n" \
+"        return $this->options['statement'];\n" \
 "    }\n" \
 "}\n" \
 ""},
@@ -1260,6 +1294,18 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "    }\n" \
 "\n" \
 "    /**\n" \
+"     * Updates a documents expiry.\n" \
+"     *\n" \
+"     * @param string $id\n" \
+"     * @param integer $expiry\n" \
+"     * @param array $options\n" \
+"     * @return mixed\n" \
+"     */\n" \
+"    public function touch($id, $expiry, $options = array()) {\n" \
+"        return $this->me->touch($id, $expiry, $options);\n" \
+"    }\n" \
+"\n" \
+"    /**\n" \
 "     * Increment or decrements a key (based on $delta).\n" \
 "     *\n" \
 "     * @param string|array $ids\n" \
@@ -1310,28 +1356,30 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "     *\n" \
 "     * @internal\n" \
 "     */\n" \
-"    public function _query($dmlstring) {\n" \
-"        if ($this->queryhosts == NULL) {\n" \
-"            throw new CouchbaseException('no available query nodes');\n" \
+"    public function _n1ql($queryObj) {\n" \
+"        $data = json_encode($queryObj->toObject());\n" \
+"    \n" \
+"        if ($this->queryhosts) {\n" \
+"            $hostidx = array_rand($this->queryhosts, 1);\n" \
+"            $host = $this->queryhosts[$hostidx];\n" \
+"    \n" \
+"            $ch = curl_init();\n" \
+"            curl_setopt($ch, CURLOPT_URL, 'http://' . $host . '/query');\n" \
+"            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);\n" \
+"            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');\n" \
+"            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);\n" \
+"            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n" \
+"            curl_setopt($ch, CURLOPT_HTTPHEADER, array(\n" \
+"                    'Content-Type: application/json',\n" \
+"                    'Content-Length: ' . strlen($data))\n" \
+"            );\n" \
+"            $res = curl_exec($ch);\n" \
+"            curl_close($ch);\n" \
+"        } else {\n" \
+"            $res = $this->me->http_request(3, 2, NULL, $data, 1);\n" \
 "        }\n" \
-"\n" \
-"        $hostidx = array_rand($this->queryhosts, 1);\n" \
-"        $host = $this->queryhosts[$hostidx];\n" \
-"\n" \
-"        $ch = curl_init();\n" \
-"        curl_setopt($ch, CURLOPT_URL, 'http://' . $host . '/query');\n" \
-"        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);\n" \
-"        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');\n" \
-"        curl_setopt($ch, CURLOPT_POSTFIELDS, $dmlstring);\n" \
-"        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);\n" \
-"        curl_setopt($ch, CURLOPT_HTTPHEADER, array(\n" \
-"                'Content-Type: text/plain',\n" \
-"                'Content-Length: ' . strlen($dmlstring))\n" \
-"        );\n" \
-"        $result = curl_exec($ch);\n" \
-"        curl_close($ch);\n" \
-"\n" \
-"        $resjson = json_decode($result, true);\n" \
+"        \n" \
+"        $resjson = json_decode($res, true);\n" \
 "\n" \
 "        if (isset($resjson['errors'])) {\n" \
 "            throw new CouchbaseException($resjson['errors'][0]['msg'], 999);\n" \
@@ -1352,20 +1400,11 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "            $query instanceof _CouchbaseSpatialViewQuery) {\n" \
 "            return $this->_view($query);\n" \
 "        } else if ($query instanceof CouchbaseN1qlQuery) {\n" \
-"            return $this->_query($query->querystr);\n" \
+"            return $this->_n1ql($query);\n" \
 "        } else {\n" \
 "            throw new CouchbaseException(\n" \
 "                'Passed object must be of type ViewQuery or N1qlQuery');\n" \
 "        }\n" \
-"    }\n" \
-"\n" \
-"    /**\n" \
-"     * Flushes a bucket (clears all data).\n" \
-"     *\n" \
-"     * @return mixed\n" \
-"     */\n" \
-"    public function flush() {\n" \
-"        return $this->me->flush();\n" \
 "    }\n" \
 "\n" \
 "    /**\n" \
@@ -1607,7 +1646,11 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "    public function getDesignDocument($name) {\n" \
 "        $path = '_design/' . $name;\n" \
 "        $res = $this->_me->http_request(1, 1, $path, NULL, 2);\n" \
-"        return json_decode($res, true);\n" \
+"        $data = json_decode($res, true);\n" \
+"        if (isset($data['error'])) {\n" \
+"            return false;\n" \
+"        }\n" \
+"        return $data;\n" \
 "    }\n" \
 "\n" \
 "    /**\n" \
@@ -1619,6 +1662,17 @@ pcbc_stub_data PCBC_PHP_CODESTR[] = {
 "    public function removeDesignDocument($name) {\n" \
 "        $path = '_design/' . $name;\n" \
 "        $res = $this->_me->http_request(1, 4, $path, NULL, 2);\n" \
+"        return json_decode($res, true);\n" \
+"    }\n" \
+"\n" \
+"    /**\n" \
+"     * Flushes this bucket (clears all data).\n" \
+"     *\n" \
+"     * @return mixed\n" \
+"     */\n" \
+"    public function flush() {\n" \
+"        $path = \"/pools/default/buckets/\" . $this->_name . \"/controller/doFlush\";\n" \
+"        $res = $this->_me->http_request(2, 2, $path, NULL, 2);\n" \
 "        return json_decode($res, true);\n" \
 "    }\n" \
 "\n" \

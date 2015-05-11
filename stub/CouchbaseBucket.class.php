@@ -234,6 +234,18 @@ class CouchbaseBucket {
     }
 
     /**
+     * Updates a documents expiry.
+     *
+     * @param string $id
+     * @param integer $expiry
+     * @param array $options
+     * @return mixed
+     */
+    public function touch($id, $expiry, $options = array()) {
+        return $this->me->touch($id, $expiry, $options);
+    }
+
+    /**
      * Increment or decrements a key (based on $delta).
      *
      * @param string|array $ids
@@ -284,28 +296,30 @@ class CouchbaseBucket {
      *
      * @internal
      */
-    public function _query($dmlstring) {
-        if ($this->queryhosts == NULL) {
-            throw new CouchbaseException('no available query nodes');
+    public function _n1ql($queryObj) {
+        $data = json_encode($queryObj->toObject());
+    
+        if ($this->queryhosts) {
+            $hostidx = array_rand($this->queryhosts, 1);
+            $host = $this->queryhosts[$hostidx];
+    
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'http://' . $host . '/query');
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                    'Content-Type: application/json',
+                    'Content-Length: ' . strlen($data))
+            );
+            $res = curl_exec($ch);
+            curl_close($ch);
+        } else {
+            $res = $this->me->http_request(3, 2, NULL, $data, 1);
         }
-
-        $hostidx = array_rand($this->queryhosts, 1);
-        $host = $this->queryhosts[$hostidx];
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'http://' . $host . '/query');
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $dmlstring);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-                'Content-Type: text/plain',
-                'Content-Length: ' . strlen($dmlstring))
-        );
-        $result = curl_exec($ch);
-        curl_close($ch);
-
-        $resjson = json_decode($result, true);
+        
+        $resjson = json_decode($res, true);
 
         if (isset($resjson['errors'])) {
             throw new CouchbaseException($resjson['errors'][0]['msg'], 999);
@@ -326,20 +340,11 @@ class CouchbaseBucket {
             $query instanceof _CouchbaseSpatialViewQuery) {
             return $this->_view($query);
         } else if ($query instanceof CouchbaseN1qlQuery) {
-            return $this->_query($query->querystr);
+            return $this->_n1ql($query);
         } else {
             throw new CouchbaseException(
                 'Passed object must be of type ViewQuery or N1qlQuery');
         }
-    }
-
-    /**
-     * Flushes a bucket (clears all data).
-     *
-     * @return mixed
-     */
-    public function flush() {
-        return $this->me->flush();
     }
 
     /**
